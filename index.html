@@ -209,12 +209,19 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     <div class="form-group">
       <label class="form-label">所持巻数</label>
       <div class="vol-range">
-        <input type="number" id="f-vol-from" value="1" min="1" placeholder="1">
+        <input type="number" id="f-vol-from" value="1" min="1" placeholder="1" style="width:72px;text-align:center">
         <span>巻 〜</span>
-        <input type="number" id="f-vol-to" min="1" placeholder="最終巻">
+        <input type="number" id="f-vol-to" min="1" placeholder="最終巻" style="width:72px;text-align:center">
         <span>巻</span>
+        <button class="btn" onclick="setSingle()" style="width:auto;padding:10px 12px;font-size:13px;white-space:nowrap">単巻</button>
       </div>
-      <p style="font-size:12px;color:var(--text3);margin-top:6px">所持している巻の範囲を入力</p>
+      <p style="font-size:12px;color:var(--text3);margin-top:6px">単巻ボタン：1冊のみ所持の場合</p>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
+        <input type="checkbox" id="f-completed" style="width:18px;height:18px;accent-color:var(--green);cursor:pointer">
+        <span>完結済み</span>
+      </label>
     </div>
     <button class="btn btn-primary" onclick="saveBook()">登録する</button>
     <div style="height:20px"></div>
@@ -305,18 +312,28 @@ function searchCard(title) {
   const b = books[title];
   const vols = b.volumes || [];
   const max = vols.length ? Math.max(...vols) : 0;
+  const isSingle = b.single;
+  const isCompleted = b.completed;
   const meta = [b.author, b.publisher, b.genre, b.shelf].filter(Boolean).join(' · ');
+  const volLabel = isSingle ? '単巻' : `1〜${max}巻 所持`;
+  const nextBlock = isCompleted
+    ? `<div class="next-vol" style="background:var(--gray-light)">
+        <span class="next-vol-label" style="color:var(--gray-dark)">✅ 完結済み</span>
+        <span class="next-vol-num" style="color:var(--gray-dark)">${isSingle ? '全1巻' : `全${max}巻`}</span>
+       </div>`
+    : `<div class="next-vol">
+        <span class="next-vol-label">🛒 次に買う巻</span>
+        <span class="next-vol-num">${max + 1}巻</span>
+       </div>`;
   return `<div class="card" onclick="showDetail('${esc(title)}')">
     <div class="card-title">${title}</div>
     ${meta ? `<div class="card-sub">${meta}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <span class="badge badge-green">1〜${max}巻 所持</span>
-      <span class="badge badge-gray">${vols.length}冊</span>
+      <span class="badge badge-green">${volLabel}</span>
+      ${!isSingle ? `<span class="badge badge-gray">${vols.length}冊</span>` : ''}
+      ${isCompleted ? `<span class="badge badge-gray">完結</span>` : ''}
     </div>
-    <div class="next-vol">
-      <span class="next-vol-label">🛒 次に買う巻</span>
-      <span class="next-vol-num">${max + 1}巻</span>
-    </div>
+    ${nextBlock}
   </div>`;
 }
 
@@ -366,7 +383,9 @@ function renderList() {
             <div class="card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${title}</div>
             ${meta ? `<div class="card-sub" style="margin-bottom:6px">${meta}</div>` : ''}
           </div>
-          <span class="badge badge-green" style="flex-shrink:0">${max}巻まで</span>
+          ${b.completed
+            ? `<span class="badge badge-gray" style="flex-shrink:0">完結 全${b.single?1:max}巻</span>`
+            : `<span class="badge badge-green" style="flex-shrink:0">${b.single?'単巻':max+'巻まで'}</span>`}
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           ${b.genre ? `<span class="badge badge-gray">${b.genre}</span>` : ''}
@@ -394,9 +413,20 @@ function showDetail(title) {
     ${meta.length ? `<p class="sheet-meta">${meta.join(' · ')}</p>` : ''}
     <p style="font-size:12px;color:var(--text3);margin-bottom:4px">所持巻（タップで削除）</p>
     <div class="vol-tags">${vols.map(v => `<span class="vol-tag" onclick="delVol('${esc(title)}',${v})">${v}巻</span>`).join('')}</div>
-    <div class="next-vol" style="margin-top:12px">
-      <span class="next-vol-label">🛒 次に買う巻</span>
-      <span class="next-vol-num">${max + 1}巻</span>
+    ${b.completed
+      ? `<div class="next-vol" style="background:var(--gray-light);margin-top:12px">
+           <span class="next-vol-label" style="color:var(--gray-dark)">✅ 完結済み</span>
+           <span class="next-vol-num" style="color:var(--gray-dark)">${b.single ? '全1巻' : '全' + max + '巻'}</span>
+         </div>`
+      : `<div class="next-vol" style="margin-top:12px">
+           <span class="next-vol-label">🛒 次に買う巻</span>
+           <span class="next-vol-num">${max + 1}巻</span>
+         </div>`}
+    <div style="margin-top:12px">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;padding:10px;background:var(--bg);border-radius:var(--radius-sm)">
+        <input type="checkbox" id="detail-completed" ${b.completed?'checked':''} onchange="toggleCompleted('${esc(title)}')" style="width:18px;height:18px;accent-color:var(--green);cursor:pointer">
+        <span>完結済みにする</span>
+      </label>
     </div>
     <div class="divider"></div>
     <button class="btn btn-danger" onclick="delBook('${esc(title)}')">この作品を削除</button>
@@ -438,41 +468,67 @@ function addShelf() {
 function clearShelf() { shelf = ''; document.getElementById('shelf-display').innerHTML = ''; }
 
 // ---- 登録 ----
+function setSingle() {
+  document.getElementById('f-vol-from').value = '1';
+  document.getElementById('f-vol-to').value = '1';
+  document.getElementById('f-completed').checked = true;
+  // 単巻フラグをセット
+  setSingle._single = true;
+}
+
 function saveBook() {
   const title = document.getElementById('f-title').value.trim();
   if (!title) { toast('タイトルを入力してください'); return; }
   const from = parseInt(document.getElementById('f-vol-from').value) || 1;
-  const to = parseInt(document.getElementById('f-vol-to').value);
+  const to   = parseInt(document.getElementById('f-vol-to').value);
   if (!to || to < from) { toast('巻数を正しく入力してください'); return; }
-  const newVols = [];
-  for (let i = from; i <= to; i++) newVols.push(i);
+  const completed = document.getElementById('f-completed').checked;
+  const isSingle  = setSingle._single || (from === 1 && to === 1);
+  const newVols   = Array.from({length: to - from + 1}, (_, i) => from + i);
+
   if (books[title]) {
     const set = new Set([...books[title].volumes, ...newVols]);
-    books[title].volumes = Array.from(set).sort((a,b)=>a-b);
+    books[title].volumes   = Array.from(set).sort((a,b)=>a-b);
+    books[title].completed = completed;
+    books[title].single    = isSingle;
     const a = document.getElementById('f-author').value.trim();
     const p = document.getElementById('f-publisher').value.trim();
     const g = document.getElementById('f-genre').value;
-    if (a) books[title].author = a;
+    if (a) books[title].author    = a;
     if (p) books[title].publisher = p;
-    if (g) books[title].genre = g;
+    if (g) books[title].genre     = g;
     if (shelf) books[title].shelf = shelf;
   } else {
     books[title] = {
-      author: document.getElementById('f-author').value.trim(),
+      author:    document.getElementById('f-author').value.trim(),
       publisher: document.getElementById('f-publisher').value.trim(),
-      genre: document.getElementById('f-genre').value,
+      genre:     document.getElementById('f-genre').value,
       shelf,
-      volumes: newVols,
+      volumes:   newVols,
+      completed,
+      single:    isSingle,
       updatedAt: new Date().toISOString().slice(0,10)
     };
   }
+  setSingle._single = false;
   save();
-  toast(`「${title}」${from}〜${to}巻を登録しました！`);
+  const label = isSingle ? '単巻' : `${from}〜${to}巻`;
+  toast(`「${title}」${label}を登録しました！`);
   ['f-title','f-author','f-publisher','f-vol-to'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-genre').value = '';
   document.getElementById('f-vol-from').value = '1';
+  document.getElementById('f-completed').checked = false;
   clearShelf();
   renderSearch(); renderList();
+}
+
+function toggleCompleted(title) {
+  if (!books[title]) return;
+  books[title].completed = document.getElementById('detail-completed').checked;
+  save();
+  showDetail(title);
+  renderSearch(document.getElementById('search-q').value.trim().toLowerCase());
+  renderList();
 }
 
 // ---- バーコードスキャン ----
@@ -617,7 +673,8 @@ async function fetchBook(isbn) {
     log('Google Books: ' + (data.totalItems||0) + '件');
     if (data.items?.[0]) {
       const info = data.items[0].volumeInfo;
-      fillForm(info.title || '', (info.authors || []).join(', '), info.publisher || '');
+      log(`GB title="${info.title}" publisher="${info.publisher}" categories="${(info.categories||[]).join(',')}"`);
+      fillForm(info.title || '', (info.authors || []).join(', '), info.publisher || '', info.categories || []);
       loadEl.style.display = 'none';
       setTimeout(() => { errEl.style.display = 'none'; }, 4000);
       return;
@@ -655,17 +712,35 @@ async function fetchBook(isbn) {
   loadEl.style.display = 'none';
 }
 
-function fillForm(title, author, publisher) {
-  // 巻数をタイトルから抽出して除去
+function fillForm(title, author, publisher, categories) {
   const volMatch = title.match(/[（(]?\s*(\d+)\s*[）)]?$/);
   const cleanTitle = title.replace(/[（(]?\s*\d+\s*[）)]?\s*$/, '').replace(/\s+/g,'').trim() || title;
+  // 出版社の補足情報（括弧内）を除去して整形
+  const cleanPublisher = (publisher || '').replace(/\s*[\(（].*?[\)）]/g, '').trim();
   document.getElementById('f-title').value = cleanTitle;
   document.getElementById('f-author').value = author;
-  document.getElementById('f-publisher').value = publisher;
+  if (cleanPublisher) document.getElementById('f-publisher').value = cleanPublisher;
   if (volMatch) {
     const v = parseInt(volMatch[1]);
     document.getElementById('f-vol-from').value = v;
     document.getElementById('f-vol-to').value = v;
+  }
+  // ジャンル自動入力（Google Books categoriesから推定）
+  if (categories && categories.length) {
+    const cat = categories.join(' ').toLowerCase();
+    const genreMap = [
+      { keys: ['shonen','少年','boys','action','adventure'], val: '少年' },
+      { keys: ['shojo','少女','girls','romance','love'],     val: '少女' },
+      { keys: ['seinen','青年','young men'],                  val: '青年' },
+      { keys: ['josei','女性','women'],                       val: '女性' },
+      { keys: ['light novel','ライトノベル','novel'],          val: 'ラノベ' },
+    ];
+    for (const g of genreMap) {
+      if (g.keys.some(k => cat.includes(k))) {
+        document.getElementById('f-genre').value = g.val;
+        break;
+      }
+    }
   }
   toast('書籍情報を取得しました！');
 }
