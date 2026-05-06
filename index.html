@@ -166,7 +166,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
         <div class="scan-overlay">
           <div class="scan-frame"></div>
           <div class="scan-line"></div>
-          <div class="scan-hint">バーコードを枠内に合わせてください</div>
+          <div class="scan-hint" id="scan-hint">バーコードを枠内に合わせてください</div>
         </div>
       </div>
       <button class="btn" onclick="stopScan()">✕ スキャンを終了</button>
@@ -600,12 +600,13 @@ function startDecode(video) {
   let sameCount = 0;
   let detecting = false;
   let done = false;
+  const hintEl = document.getElementById('scan-hint');
 
   if (!('BarcodeDetector' in window)) {
-    showScanError('このブラウザはバーコード検出に対応していません。\nChrome最新版をお試しください。');
+    showScanError('BarcodeDetector 非対応ブラウザです。Chrome最新版をお使いください。');
     stopScan(); return;
   }
-  const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
+  const detector = new BarcodeDetector({ formats: ['ean_13'] });
 
   scanTimer = setInterval(async () => {
     if (done || detecting || !video.videoWidth) return;
@@ -617,15 +618,9 @@ function startDecode(video) {
       const codes = await detector.detect(canvas);
       if (codes.length > 0) {
         const raw = codes[0].rawValue;
-        // ISBN(978/979始まり)でなければ無視してスキャン継続
-        const clean = raw.replace(/-/g, '');
-        if (!clean.startsWith('978') && !clean.startsWith('979')) {
-          detecting = false;
-          return;
-        }
+        if (hintEl) hintEl.textContent = '検出: ' + raw;
         if (raw === lastCode) {
           sameCount++;
-          // 3回連続で同じコードを検出したら確定
           if (sameCount >= 3) {
             done = true;
             stopScan();
@@ -636,13 +631,16 @@ function startDecode(video) {
           sameCount = 1;
         }
       } else {
-        // バーコードが見えなくなったらリセット
-        lastCode = '';
-        sameCount = 0;
+        clearTimeout(startDecode._t);
+        startDecode._t = setTimeout(() => {
+          lastCode = '';
+          sameCount = 0;
+          if (hintEl) hintEl.textContent = 'バーコードを枠に合わせてください';
+        }, 800);
       }
     } catch(e) {}
     detecting = false;
-  }, 400);
+  }, 350);
 }
 
 async function fetchBook(isbn) {
@@ -652,32 +650,68 @@ async function fetchBook(isbn) {
   errEl.style.display = 'none';
   errEl.textContent = '';
 
-  const clean = isbn.replace(/-/g,'');
+  const raw = isbn.replace(/-/g,'');
+
+  // JANコード(192始まり)をISBNに変換して両方試す
+  // JAN例: 1920033017006 → 中間10桁 0033017006 → ISBN10 → ISBN13(978始まり)
+  function janToIsbn(jan) {
+    if (!jan.startsWith('192') || jan.length !== 13) return null;
+    try {
+      // JANの3桁目以降10桁がISBN-10の数字部分
+      const isbn10digits = jan.slice(3, 12); // 9桁
+      // チェックデジット計算
+      let sum = 0;
+      for (let i = 0; i < 9; i++) sum += parseInt(isbn10digits[i]) * (10 - i);
+      const rem = sum % 11;
+      const check = rem === 0 ? '0' : rem === 1 ? 'X' : String(11 - rem);
+      const isbn10 = isbn10digits + check;
+      // ISBN-10 → ISBN-13 変換
+      const isbn13base = '978' + isbn10digits;
+      let s = 0;
+      for (let i = 0; i < 12; i++) s += parseInt(isbn13base[i]) * (i % 2 === 0 ? 1 : 3);
+      const cd = (10 - (s % 10)) % 10;
+      return isbn13base + cd;
+    } catch(e) { return null; }
+  }
+
+  // 検索に使うコードリスト（ISBN優先、JANも試す）
+  const searchCodes = [];
+  if (raw.startsWith('978') || raw.startsWith('979')) {
+    searchCodes.push(raw); // ISBNをそのまま使用
+  } else if (raw.startsWith('192')) {
+    const converted = janToIsbn(raw);
+    if (converted) searchCodes.push(converted);
+    searchCodes.push(raw); // 変換失敗時はJANのまま試す
+  } else {
+    searchCodes.push(raw); // その他はそのまま試す
+  }
 
   const log = (msg) => { errEl.textContent += msg + '\n'; errEl.style.display = 'block'; };
-  log('📖 ISBN: ' + clean);
+  log('📖 読み取り: ' + raw + (searchCodes[0] !== raw ? ' → ' + searchCodes[0] : ''));
 
-  // Google Books API（メイン）
-  try {
-    log('🔍 Google Books API に問い合わせ中...');
-    const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${clean}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    const data = await res.json();
-    log('Google Books: ' + (data.totalItems||0) + '件');
-    if (data.items?.[0]) {
-      const info = data.items[0].volumeInfo;
-      log(`GB title="${info.title}" publisher="${info.publisher}" categories="${(info.categories||[]).join(',')}"`);
-      fillForm(info.title || '', (info.authors || []).join(', '), info.publisher || '', info.categories || []);
-      loadEl.style.display = 'none';
-      setTimeout(() => { errEl.style.display = 'none'; }, 4000);
-      return;
-    }
-  } catch(e) { log('Google Books エラー: ' + e.message); }
+  // Google Books API（メイン）- 各コードで試す
+  for (const code of searchCodes) {
+    try {
+      log('🔍 Google Books: ' + code);
+      const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${code}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const data = await res.json();
+      log('件数: ' + (data.totalItems||0));
+      if (data.items?.[0]) {
+        const info = data.items[0].volumeInfo;
+        log(`title="${info.title}" publisher="${info.publisher}" categories="${(info.categories||[]).join(',')}"`);
+        fillForm(info.title || '', (info.authors || []).join(', '), info.publisher || '', info.categories || []);
+        loadEl.style.display = 'none';
+        setTimeout(() => { errEl.style.display = 'none'; }, 4000);
+        return;
+      }
+    } catch(e) { log('Google Books エラー: ' + e.message); }
+  }
 
   // 国立国会図書館API（フォールバック）
   try {
     log('🔍 国会図書館API に問い合わせ中...');
-    const url = `https://iss.ndl.go.jp/api/opensearch?isbn=${clean}&cnt=1`;
+    const url = `https://iss.ndl.go.jp/api/opensearch?isbn=${searchCodes[0]}&cnt=1`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const text = await res.text();
