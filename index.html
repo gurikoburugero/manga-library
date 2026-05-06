@@ -582,47 +582,68 @@ function startDecode(video) {
 }
 
 async function fetchBook(isbn) {
-  document.getElementById('isbn-loading').style.display = 'flex';
+  const loadEl = document.getElementById('isbn-loading');
+  const errEl  = document.getElementById('scan-error');
+  loadEl.style.display = 'flex';
+  errEl.style.display = 'none';
   const clean = isbn.replace(/-/g,'');
+  const log = (msg) => { errEl.textContent += msg + '\n'; errEl.style.display = 'block'; };
+  log('📖 ISBN: ' + clean);
 
   // 国立国会図書館API
   try {
+    log('🔍 国会図書館API に問い合わせ中...');
     const url = `https://iss.ndl.go.jp/api/opensearch?isbn=${clean}&cnt=1`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    log('NDL ステータス: ' + res.status);
     if (res.ok) {
       const text = await res.text();
       const xml = new DOMParser().parseFromString(text, 'text/xml');
       const item = xml.querySelector('item');
       if (item) {
         const title = item.querySelector('title')?.textContent || '';
-        // dc:creator / dc:publisher はnamespace付きのため複数方法で取得
-        const nsResolver = xml.createNSResolver(xml.documentElement);
-        const creatorEl = item.querySelector('creator') ||
-          xml.evaluate('//dc:creator', item, p => p==='dc'?'http://purl.org/dc/elements/1.1/':null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)?.singleNodeValue;
-        const publisherEl = item.querySelector('publisher') ||
-          xml.evaluate('//dc:publisher', item, p => p==='dc'?'http://purl.org/dc/elements/1.1/':null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)?.singleNodeValue;
-        const creator = creatorEl?.textContent || '';
-        const publisher = publisherEl?.textContent || '';
-        if (title) { fillForm(title, creator, publisher); document.getElementById('isbn-loading').style.display = 'none'; return; }
+        const allTags = [...item.children].map(e => e.tagName + '=' + e.textContent.slice(0,20)).join(', ');
+        log('NDL タグ一覧: ' + allTags);
+        // namespace違いに対応して全子要素からcreator/publisherを探す
+        let creator = '', publisher = '';
+        for (const el of item.children) {
+          const tag = el.localName.toLowerCase();
+          if (tag === 'creator' && !creator) creator = el.textContent;
+          if (tag === 'publisher' && !publisher) publisher = el.textContent;
+        }
+        log(`NDL title="${title}" creator="${creator}" publisher="${publisher}"`);
+        if (title) {
+          fillForm(title, creator, publisher);
+          loadEl.style.display = 'none';
+          setTimeout(() => { errEl.style.display = 'none'; }, 6000);
+          return;
+        }
+      } else {
+        log('NDL: item要素が見つかりませんでした');
       }
     }
-  } catch(e) {}
+  } catch(e) { log('NDL エラー: ' + e.message); }
 
   // Google Books API（フォールバック）
   try {
+    log('🔍 Google Books API に問い合わせ中...');
     const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${clean}&langRestrict=ja`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
+    log('Google Books ステータス: ' + res.status + ' 件数: ' + (data.totalItems||0));
     if (data.items?.[0]) {
       const info = data.items[0].volumeInfo;
+      log(`GB title="${info.title}" authors="${(info.authors||[]).join(',')}" publisher="${info.publisher}"`);
       fillForm(info.title || '', (info.authors || []).join(', '), info.publisher || '');
     } else {
+      log('Google Books: 該当なし');
       toast('書籍情報を取得できませんでした。手動で入力してください。');
     }
   } catch(e) {
+    log('Google Books エラー: ' + e.message);
     toast('書籍情報を取得できませんでした。手動で入力してください。');
   }
-  document.getElementById('isbn-loading').style.display = 'none';
+  loadEl.style.display = 'none';
 }
 
 function fillForm(title, author, publisher) {
