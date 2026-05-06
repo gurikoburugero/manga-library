@@ -542,26 +542,42 @@ function startDecode(video) {
   const ctx = canvas.getContext('2d');
   let lastCode = '';
   let sameCount = 0;
+  let detecting = false;
+  let done = false;
 
-  scanTimer = setInterval(() => {
-    if (!video.videoWidth) return;
+  if (!('BarcodeDetector' in window)) {
+    showScanError('このブラウザはバーコード検出に対応していません。\nChrome最新版をお試しください。');
+    stopScan(); return;
+  }
+  const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
+
+  scanTimer = setInterval(async () => {
+    if (done || detecting || !video.videoWidth) return;
+    detecting = true;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
-
-    // BarcodeDetector API (Chrome Android対応)
-    if ('BarcodeDetector' in window) {
-      const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
-      detector.detect(canvas).then(codes => {
-        if (codes.length > 0) {
-          const raw = codes[0].rawValue;
-          if (raw === lastCode) {
-            sameCount++;
-            if (sameCount >= 2) { stopScan(); fetchBook(raw); }
-          } else { lastCode = raw; sameCount = 1; }
+    try {
+      const codes = await detector.detect(canvas);
+      if (codes.length > 0) {
+        const raw = codes[0].rawValue;
+        if (raw === lastCode) {
+          sameCount++;
+          if (sameCount >= 2) {
+            done = true;
+            stopScan();
+            fetchBook(raw);
+          }
+        } else {
+          lastCode = raw;
+          sameCount = 1;
         }
-      }).catch(() => {});
-    }
+      } else {
+        lastCode = '';
+        sameCount = 0;
+      }
+    } catch(e) {}
+    detecting = false;
   }, 300);
 }
 
@@ -572,15 +588,21 @@ async function fetchBook(isbn) {
   // 国立国会図書館API
   try {
     const url = `https://iss.ndl.go.jp/api/opensearch?isbn=${clean}&cnt=1`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (res.ok) {
       const text = await res.text();
       const xml = new DOMParser().parseFromString(text, 'text/xml');
       const item = xml.querySelector('item');
       if (item) {
         const title = item.querySelector('title')?.textContent || '';
-        const creator = xml.querySelector('creator')?.textContent || '';
-        const publisher = xml.querySelector('publisher')?.textContent || '';
+        // dc:creator / dc:publisher はnamespace付きのため複数方法で取得
+        const nsResolver = xml.createNSResolver(xml.documentElement);
+        const creatorEl = item.querySelector('creator') ||
+          xml.evaluate('//dc:creator', item, p => p==='dc'?'http://purl.org/dc/elements/1.1/':null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)?.singleNodeValue;
+        const publisherEl = item.querySelector('publisher') ||
+          xml.evaluate('//dc:publisher', item, p => p==='dc'?'http://purl.org/dc/elements/1.1/':null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)?.singleNodeValue;
+        const creator = creatorEl?.textContent || '';
+        const publisher = publisherEl?.textContent || '';
         if (title) { fillForm(title, creator, publisher); document.getElementById('isbn-loading').style.display = 'none'; return; }
       }
     }
