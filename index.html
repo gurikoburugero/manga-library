@@ -617,9 +617,16 @@ function startDecode(video) {
       const codes = await detector.detect(canvas);
       if (codes.length > 0) {
         const raw = codes[0].rawValue;
+        // ISBN(978/979始まり)でなければ無視してスキャン継続
+        const clean = raw.replace(/-/g, '');
+        if (!clean.startsWith('978') && !clean.startsWith('979')) {
+          detecting = false;
+          return;
+        }
         if (raw === lastCode) {
           sameCount++;
-          if (sameCount >= 2) {
+          // 3回連続で同じコードを検出したら確定
+          if (sameCount >= 3) {
             done = true;
             stopScan();
             fetchBook(raw);
@@ -629,12 +636,13 @@ function startDecode(video) {
           sameCount = 1;
         }
       } else {
+        // バーコードが見えなくなったらリセット
         lastCode = '';
         sameCount = 0;
       }
     } catch(e) {}
     detecting = false;
-  }, 300);
+  }, 400);
 }
 
 async function fetchBook(isbn) {
@@ -644,22 +652,7 @@ async function fetchBook(isbn) {
   errEl.style.display = 'none';
   errEl.textContent = '';
 
-  // JANコード(192始まり)はISBNではないのでスキップ
-  if (isbn.startsWith('192') || isbn.startsWith('191')) {
-    errEl.textContent = '⚠️ 下段のJANコードを読みました。\n上段のバーコード（978始まり）を読み取ってください。';
-    errEl.style.display = 'block';
-    loadEl.style.display = 'none';
-    return;
-  }
-
-  // ISBN以外（978/979以外）もはじく
   const clean = isbn.replace(/-/g,'');
-  if (!clean.startsWith('978') && !clean.startsWith('979')) {
-    errEl.textContent = `⚠️ ISBNコードではありません（${clean}）。\n本の上段バーコードを読み取ってください。`;
-    errEl.style.display = 'block';
-    loadEl.style.display = 'none';
-    return;
-  }
 
   const log = (msg) => { errEl.textContent += msg + '\n'; errEl.style.display = 'block'; };
   log('📖 ISBN: ' + clean);
