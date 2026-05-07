@@ -629,8 +629,14 @@ function startDecode(video) {
     try {
       const codes = await detector.detect(canvas);
       if (codes.length > 0) {
-        const raw = codes[0].rawValue;
-        if (hintEl) hintEl.textContent = '検出: ' + raw;
+        const raw = codes[0].rawValue.replace(/-/g, '');
+        // ISBN(978/979始まり)のみ処理、それ以外は無視してスキャン継続
+        if (!raw.startsWith('978') && !raw.startsWith('979')) {
+          if (hintEl) hintEl.textContent = '上段のISBNバーコード（978始まり）を読んでください';
+          detecting = false;
+          return;
+        }
+        if (hintEl) hintEl.textContent = '読み取り中: ' + raw;
         if (raw === lastCode) {
           sameCount++;
           if (sameCount >= 3) {
@@ -768,6 +774,16 @@ async function fetchBook(isbn) {
   loadEl.style.display = 'none';
 }
 
+function cleanAuthor(raw) {
+  if (!raw) return '';
+  // openBD形式「姓, 名, YYYY-」や「姓,名」をフルネームに整形
+  // カンマ区切りの場合：最初の2要素を「姓名」として結合、年号部分(数字+ハイフン)は除去
+  return raw.split(/[／\/]/).map(part => {
+    const segments = part.split(',').map(s => s.trim()).filter(s => s && !/^\d{4}[-–]/.test(s));
+    return segments.length >= 2 ? segments[0] + ' ' + segments[1] : segments[0] || part.trim();
+  }).join(' / ').trim();
+}
+
 function fillForm(title, author, publisher, categories) {
   const volMatch = title.match(/[（(]?\s*(\d+)\s*[）)]?$/);
   const cleanTitle = title.replace(/[（(]?\s*\d+\s*[）)]?\s*$/, '').replace(/\s+/g,'').trim() || title;
@@ -775,7 +791,7 @@ function fillForm(title, author, publisher, categories) {
   const cleanPublisher = (publisher && publisher !== 'undefined') ? publisher.replace(/\s*[\(（].*?[\)）]/g, '').trim() : '';
   document.getElementById('f-title').value = cleanTitle;
   document.getElementById('f-yomi').value = '';  // フリガナは手動入力
-  document.getElementById('f-author').value = author || '';
+  document.getElementById('f-author').value = cleanAuthor(author);
   if (cleanPublisher) document.getElementById('f-publisher').value = cleanPublisher;
   if (volMatch) {
     const v = parseInt(volMatch[1]);
