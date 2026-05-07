@@ -275,7 +275,24 @@ let scanStream = null;
 let scanTimer = null;
 
 function load() {
-  try { books = JSON.parse(localStorage.getItem(LSKEY) || '{}'); } catch(e) { books = {}; }
+  try {
+    const cur = localStorage.getItem(LSKEY);
+    if (cur) {
+      books = JSON.parse(cur);
+    } else {
+      // 旧キーからマイグレーション
+      const OLD_KEYS = ['manga-library-v1', 'manga-v2'];
+      for (const k of OLD_KEYS) {
+        const old = localStorage.getItem(k);
+        if (old) {
+          books = JSON.parse(old);
+          localStorage.setItem(LSKEY, old); // 新キーに保存
+          toast('以前のデータを復元しました');
+          break;
+        }
+      }
+    }
+  } catch(e) { books = {}; }
   renderSearch(); renderList();
 }
 
@@ -557,6 +574,8 @@ function saveBook() {
   const newVols   = Array.from({length: to - from + 1}, (_, i) => from + i);
 
   const yomi = document.getElementById('f-yomi').value.trim();
+  // 「追加」ボタンを押した場合もinput欄に直接入力した場合もどちらも拾う
+  const shelfVal = shelf || document.getElementById('f-shelf-input').value.trim();
   if (books[title]) {
     const set = new Set([...books[title].volumes, ...newVols]);
     books[title].volumes   = Array.from(set).sort((a,b)=>a-b);
@@ -565,18 +584,18 @@ function saveBook() {
     const a = document.getElementById('f-author').value.trim();
     const p = document.getElementById('f-publisher').value.trim();
     const g = document.getElementById('f-genre').value;
-    if (yomi) books[title].yomi    = yomi;
-    if (a) books[title].author     = a;
-    if (p) books[title].publisher  = p;
-    if (g) books[title].genre      = g;
-    if (shelf) books[title].shelf  = shelf;
+    if (yomi)     books[title].yomi      = yomi;
+    if (a)        books[title].author    = a;
+    if (p)        books[title].publisher = p;
+    if (g)        books[title].genre     = g;
+    if (shelfVal) books[title].shelf     = shelfVal;
   } else {
     books[title] = {
       yomi,
       author:    document.getElementById('f-author').value.trim(),
       publisher: document.getElementById('f-publisher').value.trim(),
       genre:     document.getElementById('f-genre').value,
-      shelf,
+      shelf:     shelfVal,
       volumes:   newVols,
       completed,
       single:    isSingle,
