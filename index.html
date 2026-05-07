@@ -172,6 +172,14 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
       <button class="btn" onclick="stopScan()">✕ スキャンを終了</button>
     </div>
 
+    <!-- ISBN手入力 -->
+    <div class="form-group" style="display:flex;gap:8px;align-items:flex-start">
+      <div style="flex:1">
+        <input type="text" id="isbn-input" placeholder="ISBNを手入力（例：9784088123456）" inputmode="numeric" autocomplete="off">
+      </div>
+      <button class="btn" style="width:auto;padding:11px 14px;white-space:nowrap;flex-shrink:0" onclick="fetchByIsbnInput()">検索</button>
+    </div>
+
     <div id="isbn-loading" style="display:none" class="loading">
       <div class="spinner"></div>書籍情報を取得中...
     </div>
@@ -213,9 +221,9 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     <div class="form-group">
       <label class="form-label">所持巻数</label>
       <div class="vol-range">
-        <input type="number" id="f-vol-from" value="1" min="1" placeholder="1" style="width:72px;text-align:center">
+        <input type="number" id="f-vol-from" value="0" min="0" placeholder="0" style="width:72px;text-align:center">
         <span>巻 〜</span>
-        <input type="number" id="f-vol-to" min="1" placeholder="最終巻" style="width:72px;text-align:center">
+        <input type="number" id="f-vol-to" min="0" placeholder="最終巻" style="width:72px;text-align:center">
         <span>巻</span>
         <button class="btn" onclick="setSingle()" style="width:auto;padding:10px 12px;font-size:13px;white-space:nowrap">単巻</button>
       </div>
@@ -364,6 +372,8 @@ function kanaGroup(title) {
   return 'その他';
 }
 
+const GROUP_ORDER = ['あ行','か行','さ行','た行','な行','は行','ま行','や行','ら行','わ行','A-Z','その他'];
+
 function renderList() {
   const all = Object.keys(books);
   document.getElementById('list-count').textContent = all.length + '冊登録済み';
@@ -374,7 +384,8 @@ function renderList() {
   }
   const groups = {};
   all.sort().forEach(k => { const g = kanaGroup(k); if (!groups[g]) groups[g] = []; groups[g].push(k); });
-  const gkeys = Object.keys(groups);
+  // GROUP_ORDERに従って五十音順に並べ、存在するグループだけ表示
+  const gkeys = GROUP_ORDER.filter(g => groups[g]);
   document.getElementById('alpha-row').innerHTML =
     `<button class="alpha-btn ${!filterAlpha?'on':''}" onclick="setAlpha(null)">全て</button>` +
     gkeys.map(g => `<button class="alpha-btn ${filterAlpha===g?'on':''}" onclick="setAlpha('${g}')">${g}</button>`).join('');
@@ -416,11 +427,11 @@ function showDetail(title) {
   if (!b) return;
   const vols = (b.volumes || []).sort((a, z) => a - z);
   const max = vols.length ? Math.max(...vols) : 0;
-  const meta = [b.author, b.publisher, b.genre, b.shelf].filter(Boolean);
+  const genreOptions = ['','少年','少女','青年','女性','ラノベ','その他']
+    .map(g => `<option value="${g}" ${b.genre===g?'selected':''}>${g||'選択してください'}</option>`).join('');
   document.getElementById('sheet-body').innerHTML = `
-    <h2>${title}</h2>
-    ${meta.length ? `<p class="sheet-meta">${meta.join(' · ')}</p>` : ''}
-    <p style="font-size:12px;color:var(--text3);margin-bottom:4px">所持巻（タップで削除）</p>
+    <h2 style="margin-bottom:4px">${title}</h2>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">タップした巻は削除されます</p>
     <div class="vol-tags">${vols.map(v => `<span class="vol-tag" onclick="delVol('${esc(title)}',${v})">${v}巻</span>`).join('')}</div>
     ${b.completed
       ? `<div class="next-vol" style="background:var(--gray-light);margin-top:12px">
@@ -438,8 +449,33 @@ function showDetail(title) {
       </label>
     </div>
     <div class="divider"></div>
+    <p style="font-size:13px;font-weight:500;margin-bottom:12px;color:var(--text)">情報を編集</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">フリガナ</label>
+        <input type="text" id="detail-yomi" value="${b.yomi||''}" placeholder="例：ワンピース" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;outline:none">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">作者名</label>
+        <input type="text" id="detail-author" value="${b.author||''}" placeholder="例：尾田栄一郎" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;outline:none">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">出版社</label>
+        <input type="text" id="detail-publisher" value="${b.publisher||''}" placeholder="例：集英社" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;outline:none">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">ジャンル</label>
+        <select id="detail-genre" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;outline:none;-webkit-appearance:none">${genreOptions}</select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block">本棚タグ</label>
+        <input type="text" id="detail-shelf" value="${b.shelf||''}" placeholder="例：本棚A" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-family:inherit;outline:none">
+      </div>
+      <button class="btn btn-primary" onclick="saveDetail('${esc(title)}')">変更を保存</button>
+    </div>
+    <div class="divider"></div>
     <button class="btn btn-danger" onclick="delBook('${esc(title)}')">この作品を削除</button>
-  `;
+  \`;
   document.getElementById('sheet-bg').classList.add('open');
 }
 
@@ -466,6 +502,29 @@ function delBook(title) {
   toast(`「${title}」を削除しました`);
 }
 
+function saveDetail(title) {
+  if (!books[title]) return;
+  books[title].yomi      = document.getElementById('detail-yomi')?.value.trim()      || books[title].yomi || '';
+  books[title].author    = document.getElementById('detail-author')?.value.trim()    || '';
+  books[title].publisher = document.getElementById('detail-publisher')?.value.trim() || '';
+  books[title].genre     = document.getElementById('detail-genre')?.value            || '';
+  books[title].shelf     = document.getElementById('detail-shelf')?.value.trim()     || '';
+  save();
+  renderSearch(document.getElementById('search-q').value.trim().toLowerCase());
+  renderList();
+  toast(`「${title}」を更新しました`);
+  // シートを再描画して反映
+  showDetail(title);
+}
+
+function fetchByIsbnInput() {
+  const val = document.getElementById('isbn-input').value.trim().replace(/-/g,'');
+  if (!val) { toast('ISBNを入力してください'); return; }
+  if (val.length < 10) { toast('ISBNは10桁または13桁で入力してください'); return; }
+  document.getElementById('isbn-input').value = '';
+  fetchBook(val);
+}
+
 // ---- 本棚タグ ----
 function addShelf() {
   const v = document.getElementById('f-shelf-input').value.trim();
@@ -478,7 +537,7 @@ function clearShelf() { shelf = ''; document.getElementById('shelf-display').inn
 
 // ---- 登録 ----
 function setSingle() {
-  document.getElementById('f-vol-from').value = '1';
+  document.getElementById('f-vol-from').value = '0';
   document.getElementById('f-vol-to').value = '1';
   document.getElementById('f-completed').checked = true;
   // 単巻フラグをセット
@@ -488,9 +547,11 @@ function setSingle() {
 function saveBook() {
   const title = document.getElementById('f-title').value.trim();
   if (!title) { toast('タイトルを入力してください'); return; }
-  const from = parseInt(document.getElementById('f-vol-from').value) || 1;
-  const to   = parseInt(document.getElementById('f-vol-to').value);
-  if (!to || to < from) { toast('巻数を正しく入力してください'); return; }
+  const fromRaw = document.getElementById('f-vol-from').value;
+  const toRaw   = document.getElementById('f-vol-to').value;
+  const from = fromRaw === '' ? 0 : parseInt(fromRaw);
+  const to   = parseInt(toRaw);
+  if (isNaN(from) || isNaN(to) || to < from) { toast('巻数を正しく入力してください'); return; }
   const completed = document.getElementById('f-completed').checked;
   const isSingle  = setSingle._single || (from === 1 && to === 1);
   const newVols   = Array.from({length: to - from + 1}, (_, i) => from + i);
@@ -528,7 +589,7 @@ function saveBook() {
   toast(`「${title}」${label}を登録しました！`);
   ['f-title','f-yomi','f-author','f-publisher','f-vol-to'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-genre').value = '';
-  document.getElementById('f-vol-from').value = '1';
+  document.getElementById('f-vol-from').value = '0';
   document.getElementById('f-completed').checked = false;
   clearShelf();
   renderSearch(); renderList();
@@ -598,11 +659,15 @@ function showScanError(msg) {
 
 function stopScan() {
   if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  clearTimeout(startDecode._t);
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
   const video = document.getElementById('scan-video');
   video.srcObject = null;
   document.getElementById('scan-area').style.display = 'none';
   document.getElementById('scan-btn-area').style.display = 'block';
+  // ヒントをリセット
+  const hintEl = document.getElementById('scan-hint');
+  if (hintEl) hintEl.textContent = 'バーコードを枠内に合わせてください';
 }
 
 function startDecode(video) {
