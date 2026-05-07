@@ -341,10 +341,11 @@ function searchCard(title) {
   const b = books[title];
   const vols = b.volumes || [];
   const max = vols.length ? Math.max(...vols) : 0;
+  const min = vols.length ? Math.min(...vols) : 1;
   const isSingle = b.single;
   const isCompleted = b.completed;
   const meta = [b.author, b.publisher, b.genre, b.shelf].filter(Boolean).join(' · ');
-  const volLabel = isSingle ? '単巻' : `1〜${max}巻 所持`;
+  const volLabel = isSingle ? '単巻' : `${min}〜${max}巻 所持`;
   const nextBlock = isCompleted
     ? `<div class="next-vol" style="background:var(--gray-light)">
         <span class="next-vol-label" style="color:var(--gray-dark)">✅ 完結済み</span>
@@ -418,17 +419,20 @@ function renderList() {
     html += `<div class="section-head">${g}</div>`;
     show[g].forEach(title => {
       const b = books[title];
-      const max = b.volumes && b.volumes.length ? Math.max(...b.volumes) : 0;
+      const vols = b.volumes && b.volumes.length ? b.volumes : [];
+      const max = vols.length ? Math.max(...vols) : 0;
+      const min = vols.length ? Math.min(...vols) : 1;
       const meta = [b.author, b.publisher].filter(Boolean).join(' / ');
+      const volBadge = b.single ? '単巻'
+        : b.completed ? `完結 全${min === 0 ? '0〜' + max : max}巻`
+        : `${min}〜${max}巻`;
       html += `<div class="card" onclick="showDetail('${esc(title)}')">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="flex:1;min-width:0">
             <div class="card-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${title}</div>
             ${meta ? `<div class="card-sub" style="margin-bottom:6px">${meta}</div>` : ''}
           </div>
-          ${b.completed
-            ? `<span class="badge badge-gray" style="flex-shrink:0">完結 全${b.single?1:max}巻</span>`
-            : `<span class="badge badge-green" style="flex-shrink:0">${b.single?'単巻':max+'巻まで'}</span>`}
+          <span class="badge ${b.completed ? 'badge-gray' : 'badge-green'}" style="flex-shrink:0">${volBadge}</span>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           ${b.genre ? `<span class="badge badge-gray">${b.genre}</span>` : ''}
