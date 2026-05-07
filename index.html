@@ -399,8 +399,14 @@ function renderList() {
     document.getElementById('list-body').innerHTML = `<div class="empty"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><p>まだ本が登録されていません</p></div>`;
     return;
   }
+  // ソートキー：フリガナが登録されていればそちら、なければタイトルで並び替え
+  const sortKey = k => (books[k]?.yomi || k);
   const groups = {};
-  all.sort().forEach(k => { const g = kanaGroup(k); if (!groups[g]) groups[g] = []; groups[g].push(k); });
+  all.sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'ja')).forEach(k => {
+    const g = kanaGroup(k);
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(k);
+  });
   // GROUP_ORDERに従って五十音順に並べ、存在するグループだけ表示
   const gkeys = GROUP_ORDER.filter(g => groups[g]);
   document.getElementById('alpha-row').innerHTML =
@@ -530,8 +536,8 @@ function saveDetail(title) {
   renderSearch(document.getElementById('search-q').value.trim().toLowerCase());
   renderList();
   toast(`「${title}」を更新しました`);
-  // シートを再描画して反映
-  showDetail(title);
+  // 保存後はシートを閉じる
+  document.getElementById('sheet-bg').classList.remove('open');
 }
 
 function fetchByIsbnInput() {
